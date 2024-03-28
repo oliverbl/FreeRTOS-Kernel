@@ -111,6 +111,7 @@ static BaseType_t xSchedulerEnd = pdFALSE;
 static pthread_t hTimerTickThread;
 static bool xTimerTickThreadShouldRun;
 static uint64_t prvStartTimeNs;
+struct event* irqEvent;
 /*-----------------------------------------------------------*/
 
 static void prvSetupSignalsAndSchedulerPolicy( void );
@@ -123,6 +124,8 @@ static void prvResumeThread( Thread_t * xThreadId );
 static void vPortSystemTickHandler( int sig );
 static void vPortStartFirstTask( void );
 static void prvPortYieldFromISR( void );
+static void prvSignalOrCreateIRQEvent( void );
+static void prvWaitForIRQEventIfExists( void );
 /*-----------------------------------------------------------*/
 
 static void prvFatalError( const char * pcCall,
@@ -343,6 +346,7 @@ void vPortYield( void )
 
 void vPortDisableInterrupts( void )
 {
+    prvWaitForIRQEventIfExists();
     pthread_sigmask( SIG_BLOCK, &xAllSignals, NULL );
 }
 /*-----------------------------------------------------------*/
@@ -350,6 +354,7 @@ void vPortDisableInterrupts( void )
 void vPortEnableInterrupts( void )
 {
     pthread_sigmask( SIG_UNBLOCK, &xAllSignals, NULL );
+    prvSignalOrCreateIRQEvent();
 }
 /*-----------------------------------------------------------*/
 
@@ -357,12 +362,14 @@ UBaseType_t xPortSetInterruptMask( void )
 {
     /* Interrupts are always disabled inside ISRs (signals
      * handlers). */
+    prvWaitForIRQEventIfExists();
     return ( UBaseType_t ) 0;
 }
 /*-----------------------------------------------------------*/
 
 void vPortClearInterruptMask( UBaseType_t uxMask )
 {
+    prvSignalOrCreateIRQEvent();
     ( void ) uxMask;
 }
 /*-----------------------------------------------------------*/
@@ -616,3 +623,20 @@ uint32_t ulPortGetRunTime( void )
     return ( uint32_t ) xTimes.tms_utime;
 }
 /*-----------------------------------------------------------*/
+
+static void prvSignalOrCreateIRQEvent(void)
+{
+    if(irqEvent == NULL)
+    {
+        irqEvent = event_create();
+    }
+    event_signal(irqEvent);
+}
+
+static void prvWaitForIRQEventIfExists(void)
+{
+    if(irqEvent != NULL)
+    {
+        event_wait(irqEvent);
+    }
+}
